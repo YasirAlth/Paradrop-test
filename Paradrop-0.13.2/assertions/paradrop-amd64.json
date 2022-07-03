@@ -1,0 +1,23 @@
+{
+    "type": "model",
+    "authority-id": "V5LQUvE6qno21yFrcGAM7posL78I816Q",
+    "brand-id": "V5LQUvE6qno21yFrcGAM7posL78I816Q",
+    "series": "16",
+    "model": "paradrop-amd64",
+    "architecture": "amd64",
+    "gadget": "paradrop-amd64",
+    "kernel": "pc-kernel",
+    "required-snaps": [
+        "airshark",
+        "bluez",
+        "docker",
+        "paradrop-agent",
+        "paradrop-governor",
+        "paradrop-snmpd",
+        "pulseaudio",
+        "zerotier-one"
+    ],
+    "timestamp": "%TIMESTAMP%"
+}
+
+

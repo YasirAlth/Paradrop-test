@@ -1,0 +1,25 @@
+name: paradrop-amd64
+version: 0.12.6
+type: gadget
+summary: Paradrop amd64 Gadget
+description: This gadget runs Paradrop on a generic amd64 system.
+grade: stable
+confinement: strict
+icon: icon.png
+architectures:
+  - amd64
+
+parts:
+  grub-prepare:
+    plugin: nil
+    stage-packages:
+      - grub-efi-amd64-signed
+      - grub-pc-bin
+      - shim-signed
+    prime: [ -* ]
+  grub:
+    source: .
+    build-packages:
+      - grub-common
+    plugin: make
+    after: [grub-prepare]

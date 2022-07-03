@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+
+import configparser
+import os
+import stat
+import subprocess
+
+
+SNAP_COMMON = os.environ['SNAP_COMMON']
+SETTINGS_FILE = "settings.ini"
+
+KEY_DIR_NAME = "keys"
+PRIVATE_KEY_FILE = "node.key"
+PUBLIC_KEY_FILE = "node.pub"
+
+# List of settings to apply.  Each item is a tuple:
+# (snap option, ini section, name).
+#
+# Apparently, snapctl does not allow underscores in the option names,
+# so we need to do some translation for now.
+#
+# Example:
+#
+#   snap set paradrop-daemon base.concurrent-builds=false
+#
+# Results in:
+#
+#   [base]
+#   concurrent_builds = false
+#   ...
+#
+SETTINGS = [
+    ("base.allow-monitor-mode",       "base", "allow_monitor_mode"),
+    ("base.concurrent-builds",        "base", "concurrent_builds"),
+    ("base.debug-mode",               "base", "debug_mode"),
+    ("base.default-lan-address",      "base", "default_lan_address"),
+    ("base.default-lan-network",      "base", "default_lan_network"),
+    ("base.default-panel-password",   "base", "default_panel_password"),
+    ("base.default-panel-username",   "base", "default_panel_username"),
+    ("base.default-wireless-enabled", "base", "default_wireless_enabled"),
+    ("base.default-wireless-essid",   "base", "default_wireless_essid"),
+    ("base.default-wireless-key",     "base", "default_wireless_key"),
+    ("base.dynamic-network-pool",     "base", "dynamic_network_pool"),
+    ("base.local-domain",             "base", "local_domain")
+]
+
+
+# Create a set of environment variables to pass to subprocesses.
+# In particular, we want to make sure an appropriate PATH variable is set.
+subprocess_env = os.environ.copy()
+subprocess_env['PATH'] = os.path.expandvars("$SNAP/usr/sbin:$SNAP/usr/bin:$SNAP/sbin:$SNAP/bin:$PATH")
+
+
+def prepare_ssh_key():
+    key_dir = os.path.join(SNAP_COMMON, KEY_DIR_NAME)
+    if not os.path.isdir(key_dir):
+        os.mkdir(key_dir)
+
+    private_key_path = os.path.join(key_dir, PRIVATE_KEY_FILE)
+    if not os.path.isfile(private_key_path):
+        cmd = ["openssl", "genrsa", "-out", private_key_path, "4096"]
+        subprocess.call(cmd, env=subprocess_env)
+
+        os.chmod(private_key_path, stat.S_IRUSR)
+
+    public_key_path = os.path.join(key_dir, PUBLIC_KEY_FILE)
+    if not os.path.isfile(public_key_path):
+        cmd = ["ssh-keygen", "-y", "-f", private_key_path]
+        result = subprocess.check_output(cmd, env=subprocess_env)
+        pubkey = result.decode('ascii', 'ignore').strip()
+
+        with open(public_key_path, "w") as output:
+            output.write(pubkey)
+
+
+def prepare_settings_file():
+    path = os.path.join(SNAP_COMMON, SETTINGS_FILE)
+
+    config = configparser.ConfigParser()
+    config.read(path)
+
+    # We expect the [base] section to exist. If it does not exist and we call
+    # config.set, it will raise a NoSection exception.
+    if not config.has_section('base'):
+        config.add_section('base')
+
+    for option, section, name in SETTINGS:
+        cmd = ["snapctl", "get", option]
+        try:
+            result = subprocess.check_output(cmd, env=subprocess_env)
+            if len(result) > 0:
+                value = result.decode('ascii', 'ignore').strip()
+                if len(value) > 0:
+                    config.set(section, name, value)
+
+            elif config.has_option(section, name):
+                # Value exists in settings file but not snapd state.
+                # Call "snapctl set" so that users will see the value
+                # if they call "snap get".
+                value = config.get(section, name)
+                cmd = ["snapctl", "set", option, value]
+                subprocess.call(cmd, env=subprocess_env)
+
+        except subprocess.CalledProcessError:
+            pass
+
+    # Catch and ignore exceptions for now because the whole snapd configure
+    # workflow seems buggy. It occasionally gives an error like the one below
+    # which can block installation of the snap. For now it seems better to
+    # ignore the problem and have the user edit the file directly if need be.
+    #
+    # OSError: [Errno 30] Read-only file system: '/var/snap/paradrop-agent/common/settings.ini'
+    try:
+        with open(path, 'w') as output:
+            config.write(output)
+    except OSError as error:
+        print(error)
+
+
+if __name__ == "__main__":
+    prepare_ssh_key()
+    prepare_settings_file()

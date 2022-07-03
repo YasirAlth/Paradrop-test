@@ -1,0 +1,150 @@
+name: paradrop-agent
+version: 0.13.2
+summary: Paradrop agent for managing an edge computing node
+description: |
+  The Paradrop agent manages hardware resources for an edge computing
+  node and enables easy deployment of services to a virtualized runtime
+  environment using Docker containers.
+
+  Visit https://paradrop.org to learn more.
+
+confinement: strict
+grade: stable
+
+apps:
+  paradrop:
+    command: paradrop
+    daemon: simple
+    plugs:
+      - account-control
+      - docker
+      - firewall-control
+      - hardware-observe
+      - home
+      - mount-observe
+      - network
+      - network-bind
+      - network-control
+      - ppp
+      - process-control
+      - pulseaudio
+      - ssh-public-keys
+      - shutdown
+      - system-observe
+
+  pdlog:
+    command: pdlog
+
+hooks:
+  configure:
+    plugs: [network]
+  install:
+    plugs: [network]
+
+parts:
+  localweb:
+    plugin: dump
+    source: paradrop/localweb
+
+  pdlog:
+    plugin: python
+    python-version: python2
+    source: paradrop/tools/pdlog
+
+  paradrop:
+    plugin: python
+    python-version: python2
+    source: paradrop/daemon
+    build-packages:
+      - libffi-dev
+    stage-packages:
+      - libcurl4-openssl-dev
+      - libpulse0
+      - libssl-dev
+    organize:
+      # For some reason, the libpulsecommon .so file could not be found in its
+      # default install location, so move it to a place where it can be found.
+      usr/lib/$SNAPCRAFT_ARCH_TRIPLET/pulseaudio/libpulsecommon-8.0.so: usr/lib/$SNAPCRAFT_ARCH_TRIPLET/libpulsecommon-8.0.so
+
+  dependencies:
+    plugin: nil
+    stage-packages:
+      - git
+      - haproxy
+      - iw
+      - kmod
+      - openssh-client
+      - parprouted
+      - systemd
+    filesets:
+      binaries:
+        - bin/kmod
+        - bin/systemctl
+        - sbin/iw
+        - sbin/modprobe
+        - usr/bin/git
+        - usr/bin/ssh-keygen
+        - usr/sbin/haproxy
+        - usr/sbin/parprouted
+      libraries:
+        - usr/lib/$SNAPCRAFT_ARCH_TRIPLET/liblua5.3.so.*
+    stage:
+      - $binaries
+      - $libraries
+    prime:
+      - $binaries
+      - $libraries
+
+  # Build dnsmasq from the snappy team's source code because they implemented a
+  # fix for failure under confinement. They removed code that tries to change
+  # dnsmasq's running group.
+  dnsmasq:
+    plugin: make
+    source: https://git.launchpad.net/~snappy-hwe-team/snappy-hwe-snaps/+git/wifi-ap
+    source-type: git
+    source-branch: dnsmasq/2.75
+    build-packages:
+      - build-essential
+    make-parameters:
+      - PREFIX=/
+    organize:
+      sbin/dnsmasq: bin/dnsmasq
+    filesets:
+      binaries:
+        - bin/dnsmasq
+    prime:
+      - $binaries
+
+  # Build hostapd from the snappy team's source code. This builds hostapd 2.6,
+  # with some bug fixes, vulnerability patches, and support for the
+  # no_probe_resp_if_max_sta option.
+  hostapd:
+    plugin: make
+    source: https://git.launchpad.net/~snappy-hwe-team/snappy-hwe-snaps/+git/wifi-ap
+    source-type: git
+    source-branch: hostapd/2.6
+    build-packages:
+      - build-essential
+      - pkg-config
+      - libnl-3-dev
+      - libnl-genl-3-dev
+      - libnl-route-3-dev
+      - libssl-dev
+    make-parameters:
+      - BINDIR=/bin
+    filesets:
+      binaries:
+        - bin/hostapd
+        - bin/hostapd_cli
+    prime:
+      - $binaries
+
+plugs:
+  governor-control:
+    default-provider: paradrop-governor
+    interface: content
+    target: $SNAP/governor
+  zerotier-control:
+    default-provider: zerotier-one
+    interface: content
+    target: $SNAP/zerotier-one
